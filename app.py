@@ -125,8 +125,8 @@ def detect_and_predict(img_rgb):
         return "No face detected", img_rgb, None, None
 
     # Eyes reliably sit in the upper-middle band of the face box
-    eye_y1 = y1 + int(face_h * 0.22)
-    eye_y2 = y1 + int(face_h * 0.42)
+    eye_y1 = y1 + int(face_h * 0.18)
+    eye_y2 = y1 + int(face_h * 0.55)
     eye_region = img_rgb[eye_y1:eye_y2, x1:x2]
 
     if eye_region.size == 0:
