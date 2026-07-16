@@ -1,7 +1,6 @@
 tensorflow
 opencv-python-headless<5
-streamlit-webrtc
-av
+
 streamlit
 pillow
 numpy
