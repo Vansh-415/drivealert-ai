@@ -157,12 +157,11 @@ def detect_and_predict(img_rgb):
     if len(preds) == 0:
         return "No face detected", img_rgb, None, None
 
-    # Safety-biased decision: take the MOST drowsy-leaning of the two eye
-    # readings, not the average. A false alarm is far less costly than
-    # missing real drowsiness, and averaging let one ambiguous eye reading
-    # cancel out a genuinely closed eye.
-    final_pred = float(np.min(preds))
-    idx = 1 if final_pred > 0.5 else 0
+    # Balanced decision across both eyes, with a lenient threshold so
+    # naturally smaller/narrower eyes (which show less sclera even when
+    # fully open) aren't misread as drowsy.
+    final_pred = float(np.mean(preds))
+    idx = 1 if final_pred > 0.4 else 0
     label = idx_to_class[idx]
     result = "DROWSY!" if label == "Drowsy" else "ALERT"
 
