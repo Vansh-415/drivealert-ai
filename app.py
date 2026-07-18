@@ -124,26 +124,55 @@ def detect_and_predict(img_rgb):
     if face_w <= 0 or face_h <= 0:
         return "No face detected", img_rgb, None, None
 
-    # Eyes reliably sit in the upper-middle band of the face box
-    eye_y1 = y1 + int(face_h * 0.18)
-    eye_y2 = y1 + int(face_h * 0.55)
-    eye_region = img_rgb[eye_y1:eye_y2, x1:x2]
+    # Vertical eye band -- tight, matches where eyes sit on a typical face
+    band_y1 = y1 + int(face_h * 0.24)
+    band_y2 = y1 + int(face_h * 0.44)
 
-    if eye_region.size == 0:
-        eye_region = img_rgb[y1:y2, x1:x2]
-        eye_y1, eye_y2 = y1, y2
+    # Two SEPARATE tight single-eye crops (much closer to training-data framing
+    # than one crop spanning the whole face width, which dilutes the eye detail)
+    left_x1 = x1 + int(face_w * 0.12)
+    left_x2 = x1 + int(face_w * 0.46)
+    right_x1 = x1 + int(face_w * 0.54)
+    right_x2 = x1 + int(face_w * 0.88)
 
-    eye_resized = cv2.resize(eye_region, (IMG_SIZE, IMG_SIZE))
-    eye_array = np.expand_dims(eye_resized / 255.0, axis=0)
+    def classify_region(rx1, rx2, ry1, ry2):
+        crop = img_rgb[ry1:ry2, rx1:rx2]
+        if crop.size == 0:
+            return None
+        resized = cv2.resize(crop, (IMG_SIZE, IMG_SIZE))
+        arr = np.expand_dims(resized / 255.0, axis=0)
+        pred = model.predict(arr, verbose=0)[0][0]
+        return pred, crop
 
-    prediction = model.predict(eye_array, verbose=0)[0][0]
-    idx = 1 if prediction > 0.5 else 0
+    left_result = classify_region(left_x1, left_x2, band_y1, band_y2)
+    right_result = classify_region(right_x1, right_x2, band_y1, band_y2)
+
+    preds = []
+    crops = []
+    for r in (left_result, right_result):
+        if r is not None:
+            preds.append(r[0])
+            crops.append(r[1])
+
+    if len(preds) == 0:
+        return "No face detected", img_rgb, None, None
+
+    # Safety-biased decision: take the MOST drowsy-leaning of the two eye
+    # readings, not the average. A false alarm is far less costly than
+    # missing real drowsiness, and averaging let one ambiguous eye reading
+    # cancel out a genuinely closed eye.
+    final_pred = float(np.min(preds))
+    idx = 1 if final_pred > 0.5 else 0
     label = idx_to_class[idx]
     result = "DROWSY!" if label == "Drowsy" else "ALERT"
 
+    display_crop = crops[0] if len(crops) == 1 else np.hstack([
+        cv2.resize(c, (IMG_SIZE, IMG_SIZE)) for c in crops
+    ])
+
     face_box_out = (x1, y1, face_w, face_h)
-    eye_box_out = (x1, eye_y1, face_w, eye_y2 - eye_y1)
-    return result, eye_region, face_box_out, eye_box_out
+    eye_box_out = (left_x1, band_y1, right_x2 - left_x1, band_y2 - band_y1)
+    return result, display_crop, face_box_out, eye_box_out
 
 
 def show_result(img_to_display, label_text, eye_crop):
@@ -154,9 +183,9 @@ def show_result(img_to_display, label_text, eye_crop):
         st.image(eye_crop, caption="Region analyzed", use_container_width=True)
 
     if label_text == "DROWSY!":
-        st.markdown('<div class="result-card card-drowsy">🚨 ALERT — DROWSINESS DETECTED!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="result-card card-drowsy">⚠️ DROWSY DETECTED</div>', unsafe_allow_html=True)
     elif label_text == "ALERT":
-        st.markdown('<div class="result-card card-alert">✅ AWAKE / NORMAL</div>', unsafe_allow_html=True)
+        st.markdown('<div class="result-card card-alert">✅ ALERT / NON-DROWSY</div>', unsafe_allow_html=True)
     else:
         st.markdown(
             '<div class="result-card card-warn">No face detected — try a clearer, '
